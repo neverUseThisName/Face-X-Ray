@@ -1,8 +1,7 @@
 # Face-X-Ray
 Unofficial implementation of paper 'Face X-ray for More General Face Forgery Detection'. (This demo is under developing....)
 
-##
-Key Requirements
+## Key Requirements
 torch, torchvision, scikit-image, facenet_pytorch (all can be pip installed).
 Note: facenet_pytorch can only detect 5 points landmarks. So I'm looking for a substitute.
 
