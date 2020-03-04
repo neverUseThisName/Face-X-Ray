@@ -9,5 +9,5 @@ Note: facenet_pytorch can only detect 5 points landmarks. So I'm looking for a s
 ## How it works
     1. input: source face image (I_B in paper, one image file or directory of images) and a directory of real face images as face database.
     2. search face database for the one whose landmarks are close to source face image.
-    3. apply convex hull, random deform, color correction (to be added) and swap.
+    3. apply convex hull, random deform, piecewise affine transform, color correction (to be added) and swap.
     4. save result in ./dump
