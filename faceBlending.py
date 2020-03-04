@@ -68,11 +68,11 @@ def main():
         cv2.imwrite(f'./dump/forge_{i}.jpg', cv2.cvtColor(resultantFace, cv2.COLOR_RGB2BGR))
 
 
-def get_landmarks(detector, image):
+def get_landmarks(detector, images):
     # check for detector type
     if isinstance(detector, MTCNN):
         detect = partial(detector.detect, landmarks=True)
-    return detect(image)
+    return detect(images)
 
 
 def find_one_neighbor(detector, srcPath, dl, threshold):
@@ -115,8 +115,10 @@ def images2pilBatch(images, batchSize=1):
         if len(pathBatch) == batchSize:
             if batchSize == 1:
                 yield pathBatch[0], imagePilBatch[0]
+                pathBatch, imagePilBatch = [], []
             else:
                 yield pathBatch, imagePilBatch
+                pathBatch, imagePilBatch = [], []
 
 
 def convex_hull(size, points, fillColor=(255,)*3):
