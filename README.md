@@ -2,7 +2,7 @@
 Unofficial implementation of paper 'Face X-ray for More General Face Forgery Detection'. (This demo is under developing....)
 
 ## Key Requirements
-torch, torchvision, scikit-image, dlib, color_transfer.
+numpy, scikit-image, dlib, color_transfer.
 
 ## How it works
     1. input: source face image (I_B in paper, one image file or directory of images) and a directory of real face images as face database.
