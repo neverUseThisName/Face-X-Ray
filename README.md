@@ -10,3 +10,7 @@ Note: facenet_pytorch can only detect 5 points landmarks. So I'm looking for a s
     2. search face database for the one whose landmarks are close to source face image.
     3. apply convex hull, random deform, piecewise affine transform, color correction (to be added) and swap.
     4. save result in ./dump
+    
+## Demo Result
+![](https://github.com/neverUseThisName/Face-X-Ray/blob/master/result/forge_0.jpg)
+![](https://github.com/neverUseThisName/Face-X-Ray/blob/master/result/target_0.jpg)
