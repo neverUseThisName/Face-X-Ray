@@ -27,120 +27,142 @@ from torch.utils.data import DataLoader, RandomSampler
 import torch.optim as optim
 import cv2
 from torchvision import datasets, models, transforms
+import dlib
+from tqdm import tqdm
 
+from color_transfer import color_transfer
 from facenet_pytorch import MTCNN
-from utils import files
+from utils import files, FACIAL_LANDMARKS_IDXS, shape_to_np
 
 def main():
     args = get_parser()
 
     # source faces
-    srcFaces = images2pilBatch(files(args.srcFacePath, ['.jpg']), 1)
+    srcFaces = tqdm(files(args.srcFacePath, ['.jpg']))
 
     # real faces database
     #ds = image2pilBatch(files(args.faceDatabase, ['.jpg']))
 
     # face detector
-    detector = MTCNN(select_largest=False)
+    detector = dlib.get_frontal_face_detector()
+    predictor = dlib.shape_predictor(args.shapePredictor)
 
     
-    for i, (srcPath, srcFace) in enumerate(srcFaces):
-        # detect landmarks for source face (background face in paper)
-        _, _, srcLms = get_landmarks(detector, srcFace)
-        srcLms = srcLms[0].astype(np.int32)
+    for i, srcFace in enumerate(srcFaces):
+        # load rgb
+        srcFaceRgb = dlib.load_rgb_image(srcFace)
+
+        # detect landmarks
+        srcLms = get_landmarks(detector, predictor, srcFaceRgb)
+        if srcLms is None:
+            tqdm.write(f'No face: {srcFace}')
+            continue
 
         # find first face whose landmarks are close enough in real face database
-        targetFace = find_one_neighbor(detector, srcPath, images2pilBatch(files(args.faceDatabase, ['.jpg']), 10), args.threshold)
-        if targetFace is None: # if not found
+        targetRgb = find_one_neighbor(detector, predictor, srcFace, srcLms, files(args.faceDatabase, ['.jpg']), args.threshold)
+        if targetRgb is None: # if not found
             continue
 
         # if found
-        hullMask = convex_hull(srcFace.size, srcLms) # size (h, w) mask of face convex hull
+        hullMask = convex_hull(srcFaceRgb.shape, srcLms) # size (h, w, c) mask of face convex hull
 
         # generate random deform
-        deformedLms = random_deform(srcFace.size, srcLms)
-        warped = piecewise_affine_transform(hullMask, srcLms, deformedLms) # size (h, w) warped mask
-        resultantFace = forge(srcFace, targetFace, warped) # forged face
+        anchors, deformedAnchors = random_deform(hullMask.shape[:2], 4, 4)
+
+        # piecewise affine transform
+        warped = piecewise_affine_transform(hullMask, anchors, deformedAnchors) # size (h, w) warped mask
+        blured = cv2.GaussianBlur(warped, (5,5), 3)
+
+        # swap
+        targetRgbT = color_transfer(srcFaceRgb, targetRgb)
+        resultantFace = forge(srcFaceRgb, targetRgbT, blured) # forged face
 
         # save face images
-        srcFace.save(f'./dump/src_{i}.jpg')
-        targetFace.save(f'./dump/target_{i}.jpg')
+        cv2.imwrite(f'./dump/mask_{i}.jpg', hullMask)
+        cv2.imwrite(f'./dump/deformed_{i}.jpg', warped*255)
+        cv2.imwrite(f'./dump/blured_{i}.jpg', blured*255)
+        cv2.imwrite(f'./dump/src_{i}.jpg', cv2.cvtColor(srcFaceRgb, cv2.COLOR_RGB2BGR))
+        cv2.imwrite(f'./dump/target_{i}.jpg', cv2.cvtColor(targetRgb, cv2.COLOR_RGB2BGR))
+        cv2.imwrite(f'./dump/target_T_{i}.jpg', cv2.cvtColor(targetRgbT, cv2.COLOR_RGB2BGR))
         cv2.imwrite(f'./dump/forge_{i}.jpg', cv2.cvtColor(resultantFace, cv2.COLOR_RGB2BGR))
 
 
-def get_landmarks(detector, images):
-    # check for detector type
-    if isinstance(detector, MTCNN):
-        detect = partial(detector.detect, landmarks=True)
-    return detect(images)
+def get_landmarks(detector, predictor, rgb):
+    # first get bounding box (dlib.rectangle class) of face.
+    boxes = detector(rgb, 1)
+    # print(type(boxes))
+    # for box in boxes:
+    #     print(f'{type(box)}: {box}')
+    # input()
+    for box in boxes:
+        landmarks = shape_to_np(predictor(rgb, box=box))
+        break
+    else:
+        return None
+    #jawStart, jawEnd = FACIAL_LANDMARKS_IDXS['jaw']
+    #contour = landmarks[jawStart:jawEnd]
+    return landmarks[:27].astype(np.int32)
 
 
-def find_one_neighbor(detector, srcPath, dl, threshold):
-    _, _, srcLms = get_landmarks(detector, Image.open(srcPath))
-    srcLms = srcLms[0]
-    for pathBatch, pilBatch in dl:
-        _, _, landmarksBatch = get_landmarks(detector, pilBatch)
-        distanceBatch = [distance(srcLms, lms) for lms in landmarksBatch]
-        hitPilBatch = [pil for path, pil, dis in zip(pathBatch, pilBatch, distanceBatch) if dis < threshold and basename(path).split('_')[0]!=basename(srcPath).split('_')[0]]
-        if hitPilBatch:
-            return hitPilBatch[0]
+def find_one_neighbor(detector, predictor, srcPath, srcLms, faceDatabase, threshold):
+    for face in faceDatabase:
+        rgb = dlib.load_rgb_image(face)
+        landmarks = get_landmarks(detector, predictor, rgb)
+        if landmarks is None:
+            continue
+        dist = distance(srcLms, landmarks)
+        if dist < threshold and basename(face).split('_')[0] != basename(srcPath).split('_')[0]:
+            return rgb
     return None
 
 
-def forge(srcFace, targetFace, mask):
-    # get pixel values
-    if isinstance(srcFace, Image.Image): # if input is pil image
-        srcFacePixels = np.array(srcFace)
-    if isinstance(targetFace, Image.Image):
-        targetFacePixels = np.array(targetFace)
-    mask = np.dstack([mask]*3)
-    return mask * targetFacePixels + (1 - mask) * srcFacePixels
-
-def images2pilBatch(images, batchSize=1):
-    '''
-    if batchSize==1, return (path, pil).
-    else return ([path0, path1, ...], [pil0, pil1, ...])
-    '''
-    if batchSize <= 0:
-        raise ValueError(f'Batch size must be positive, but got {batchSize}.')
-    pathBatch = []
-    imagePilBatch = []
-    for image in images:
-        try:
-            imagePil = Image.open(image)
-        except:
-            imagePil = None
-        pathBatch.append(image)
-        imagePilBatch.append(imagePil)
-        if len(pathBatch) == batchSize:
-            if batchSize == 1:
-                yield pathBatch[0], imagePilBatch[0]
-                pathBatch, imagePilBatch = [], []
-            else:
-                yield pathBatch, imagePilBatch
-                pathBatch, imagePilBatch = [], []
+def forge(srcRgb, targetRgb, mask):
+    #mask = np.dstack([mask]*3)
+    return (mask * targetRgb + (1 - mask) * srcRgb).astype(np.uint8)
 
 
 def convex_hull(size, points, fillColor=(255,)*3):
     mask = np.zeros(size, dtype=np.uint8) # mask has the same depth as input image
-    corners = np.expand_dims(np.array(points), axis=0).astype(np.int32)
+    points = cv2.convexHull(np.array(points))
+    corners = np.expand_dims(points, axis=0).astype(np.int32)
     cv2.fillPoly(mask, corners, fillColor)
     return mask
 
 
-def random_deform(imageSize, lms, mean=0, std=3):
+def random_deform(imageSize, nrows, ncols, mean=0, std=5):
+    '''
+    e.g. where nrows = 4, ncols = 5
+    ________*_____________________________________
+    |                                            |
+    |                                            |
+    |       *      *     *      *      *         |
+    |                                            |
+    |       *      *     *      *      *         |
+    |                                            |
+    |       *      *     *      *      *         |
+    |                                            |
+    |       *      *     *      *      *         |
+    |                                            |
+    ______________________________________________
+
+    '''
     h, w = imageSize
-    deformed = lms + np.random.normal(mean, std, size=lms.shape)
+    rows = np.linspace(0, h, nrows).astype(np.int32)
+    cols = np.linspace(0, w, ncols).astype(np.int32)
+    rows, cols = np.meshgrid(rows, cols)
+    anchors = np.vstack([rows.flat, cols.flat]).T
+    assert anchors.shape[1] == 2 and anchors.shape[0] == ncols * nrows
+    deformed = anchors #+ np.random.normal(mean, std, size=anchors.shape)
     np.clip(deformed[:,0], 0, h-1, deformed[:,0])
     np.clip(deformed[:,1], 0, w-1, deformed[:,1])
-    return deformed.astype(np.int32)
+    return anchors, deformed.astype(np.int32)
 
 
 def piecewise_affine_transform(image, srcAnchor, tgtAnchor):
     trans = PiecewiseAffineTransform()
     trans.estimate(srcAnchor, tgtAnchor)
     warped = warp(image, trans)
-    return warped.astype(np.uint8)
+    return warped
 
 
 def distance(lms1, lms2):
@@ -151,7 +173,8 @@ def get_parser():
     parser = argparse.ArgumentParser(description='Demo for face x-ray fake sample generation')
     parser.add_argument('--srcFacePath', '-sfp', type=str)
     parser.add_argument('--faceDatabase', '-fd', type=str)
-    parser.add_argument('--threshold', '-t', type=float, default=25)
+    parser.add_argument('--threshold', '-t', type=float, default=25, help='threshold for facial landmarks distance')
+    parser.add_argument('--shapePredictor', '-sp', type=str, default='./shape_predictor_68_face_landmarks.dat', help='Path to dlib facial landmark predictor model')
     return parser.parse_args()
 
 
