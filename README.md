@@ -4,6 +4,8 @@ Unofficial implementation of paper 'Face X-ray for More General Face Forgery Det
 ## Key Requirements
 numpy, opencv-python, scikit-image, dlib, tqdm, color_transfer.
 
+Download dlib's 'shape_predictor_68_face_landmarks.dat' file. Provide its path when running faceBlending.py script.
+
 ## How it works
     1. input: source face image (I_B in paper, one image file or directory of images) and a directory of real face images as face database.
     2. search face database for the one whose landmarks are close to source face image.
