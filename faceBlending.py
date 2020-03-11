@@ -1,10 +1,8 @@
 '''Face swap demo described in face X-Ray paper
 
-This demo is under developing.
+@author Zhuolin Fu
 
-key requirement: torch, torchvision, scikit-image, facenet_pytorch (all can be pip installed).
-
-Note: facenet_pytorch can only detect 5 points landmarks. So I'm looking for a substitute.
+key requirement: numpy, scikit-image, dlib, tqdm, color_transfer.
 
 steps:
     1. input: source face image (I_B in paper, one image file or directory of images) and a directory of real face images as face database.
@@ -20,18 +18,11 @@ from functools import partial
 
 from skimage.transform import PiecewiseAffineTransform, warp
 import numpy as np
-import torch
-import torch.nn as nn
-import torchvision
-from torch.utils.data import DataLoader, RandomSampler
-import torch.optim as optim
 import cv2
-from torchvision import datasets, models, transforms
 import dlib
 from tqdm import tqdm
 
 from color_transfer import color_transfer
-from facenet_pytorch import MTCNN
 from utils import files, FACIAL_LANDMARKS_IDXS, shape_to_np
 
 def main():
@@ -49,11 +40,15 @@ def main():
 
     
     for i, srcFace in enumerate(srcFaces):
-        # load rgb
-        srcFaceRgb = dlib.load_rgb_image(srcFace)
+        # load bgr
+        try:
+            srcFaceBgr = cv2.imread(srcFace)
+        except:
+            tqdm.write(f'Fail loading: {srcFace}')
+            continue
 
         # detect landmarks
-        srcLms = get_landmarks(detector, predictor, srcFaceRgb)
+        srcLms = get_landmarks(detector, predictor, cv2.cvtColor(srcFaceBgr, cv2.COLOR_BGR2RGB))
         if srcLms is None:
             tqdm.write(f'No face: {srcFace}')
             continue
@@ -61,47 +56,43 @@ def main():
         # find first face whose landmarks are close enough in real face database
         targetRgb = find_one_neighbor(detector, predictor, srcFace, srcLms, files(args.faceDatabase, ['.jpg']), args.threshold)
         if targetRgb is None: # if not found
+            tqdm.write(f'No Match: {srcFace}')
             continue
 
         # if found
-        hullMask = convex_hull(srcFaceRgb.shape, srcLms) # size (h, w, c) mask of face convex hull
+        targetBgr = cv2.cvtColor(targetRgb, cv2.COLOR_RGB2BGR)
+        hullMask = convex_hull(srcFaceBgr.shape, srcLms) # size (h, w, c) mask of face convex hull
 
         # generate random deform
         anchors, deformedAnchors = random_deform(hullMask.shape[:2], 4, 4)
 
-        # piecewise affine transform
+        # piecewise affine transform and blur
         warped = piecewise_affine_transform(hullMask, anchors, deformedAnchors) # size (h, w) warped mask
         blured = cv2.GaussianBlur(warped, (5,5), 3)
 
         # swap
-        targetRgbT = color_transfer(srcFaceRgb, targetRgb)
-        resultantFace = forge(srcFaceRgb, targetRgbT, blured) # forged face
+        targetBgrT = color_transfer(srcFaceBgr, targetBgr)
+        resultantFace = forge(srcFaceBgr, targetBgrT, blured) # forged face
 
         # save face images
         cv2.imwrite(f'./dump/mask_{i}.jpg', hullMask)
         cv2.imwrite(f'./dump/deformed_{i}.jpg', warped*255)
         cv2.imwrite(f'./dump/blured_{i}.jpg', blured*255)
-        cv2.imwrite(f'./dump/src_{i}.jpg', cv2.cvtColor(srcFaceRgb, cv2.COLOR_RGB2BGR))
-        cv2.imwrite(f'./dump/target_{i}.jpg', cv2.cvtColor(targetRgb, cv2.COLOR_RGB2BGR))
-        cv2.imwrite(f'./dump/target_T_{i}.jpg', cv2.cvtColor(targetRgbT, cv2.COLOR_RGB2BGR))
-        cv2.imwrite(f'./dump/forge_{i}.jpg', cv2.cvtColor(resultantFace, cv2.COLOR_RGB2BGR))
+        cv2.imwrite(f'./dump/src_{i}.jpg', srcFaceBgr)
+        cv2.imwrite(f'./dump/target_{i}.jpg', targetBgr)
+        cv2.imwrite(f'./dump/target_T_{i}.jpg', targetBgrT)
+        cv2.imwrite(f'./dump/forge_{i}.jpg', resultantFace)
 
 
 def get_landmarks(detector, predictor, rgb):
     # first get bounding box (dlib.rectangle class) of face.
     boxes = detector(rgb, 1)
-    # print(type(boxes))
-    # for box in boxes:
-    #     print(f'{type(box)}: {box}')
-    # input()
     for box in boxes:
         landmarks = shape_to_np(predictor(rgb, box=box))
         break
     else:
         return None
-    #jawStart, jawEnd = FACIAL_LANDMARKS_IDXS['jaw']
-    #contour = landmarks[jawStart:jawEnd]
-    return landmarks[:27].astype(np.int32)
+    return landmarks.astype(np.int32)
 
 
 def find_one_neighbor(detector, predictor, srcPath, srcLms, faceDatabase, threshold):
@@ -131,19 +122,19 @@ def convex_hull(size, points, fillColor=(255,)*3):
 
 def random_deform(imageSize, nrows, ncols, mean=0, std=5):
     '''
-    e.g. where nrows = 4, ncols = 5
-    ________*_____________________________________
+    e.g. where nrows = 6, ncols = 7
+    *_______*______*_____*______*______*_________*
     |                                            |
     |                                            |
-    |       *      *     *      *      *         |
+    *       *      *     *      *      *         *
     |                                            |
-    |       *      *     *      *      *         |
+    *       *      *     *      *      *         *
     |                                            |
-    |       *      *     *      *      *         |
+    *       *      *     *      *      *         *
     |                                            |
-    |       *      *     *      *      *         |
+    *       *      *     *      *      *         *
     |                                            |
-    ______________________________________________
+    *_______*______*_____*______*______*_________*
 
     '''
     h, w = imageSize
