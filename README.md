@@ -1,6 +1,5 @@
 # Face-X-Ray
-Unofficial implementation of paper 'Face X-ray for More General Face Forgery Detection'. (This demo is under developing....)
-
+Unofficial implementation of paper 'Face X-ray for More General Face Forgery Detection'.
 ## Key Requirements
 numpy, opencv-python, scikit-image, dlib, tqdm, color_transfer.
 
