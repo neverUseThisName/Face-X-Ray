@@ -14,3 +14,6 @@ Download dlib's 'shape_predictor_68_face_landmarks.dat' file. Provide its path w
 ## Demo Result
 ![](https://github.com/neverUseThisName/Face-X-Ray/blob/master/result/forge_0.jpg)
 ![](https://github.com/neverUseThisName/Face-X-Ray/blob/master/result/target_0.jpg)
+![](https://github.com/neverUseThisName/Face-X-Ray/tree/master/result/mask_0.jpg)
+![](https://github.com/neverUseThisName/Face-X-Ray/tree/master/result/deformed_0.jpg)
+![](https://github.com/neverUseThisName/Face-X-Ray/tree/master/result/blured_0.jpg)
