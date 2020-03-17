@@ -138,8 +138,8 @@ def random_deform(imageSize, nrows, ncols, mean=0, std=5):
 
     '''
     h, w = imageSize
-    rows = np.linspace(0, h, nrows).astype(np.int32)
-    cols = np.linspace(0, w, ncols).astype(np.int32)
+    rows = np.linspace(0, h-1, nrows).astype(np.int32)
+    cols = np.linspace(0, w-1, ncols).astype(np.int32)
     rows, cols = np.meshgrid(rows, cols)
     anchors = np.vstack([rows.flat, cols.flat]).T
     assert anchors.shape[1] == 2 and anchors.shape[0] == ncols * nrows
