@@ -71,7 +71,8 @@ def main():
         blured = cv2.GaussianBlur(warped, (5,5), 3)
 
         # swap
-        targetBgrT = color_transfer(srcFaceBgr, targetBgr)
+        left, up, right, bot = min(srcLms[:,0]), min(srcLms[:,1]), max(srcLms[:,0]), max(srcLms[:,1])
+        targetBgrT = color_transfer(srcFaceBgr[up:bot,left:right,:], targetBgr)
         resultantFace = forge(srcFaceBgr, targetBgrT, blured) # forged face
 
         # save face images
